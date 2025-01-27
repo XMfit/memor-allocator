@@ -11,7 +11,7 @@ int init_heap() {
 
     // Split our heap into blocks
     struct block_metadata *initial_block = (struct block_metadata *)heap;   // 1 big free block
-    initial_block->size = INIT_HEAP_SIZE - BLOCK_SIZE;  // INIT_HEAP_SIZE - BLOCK_SIZE = available space for user data
+    initial_block->size = INIT_HEAP_SIZE - METADATA_SIZE;  // INIT_HEAP_SIZE - BLOCK_SIZE = available space for user data
     initial_block->free = 1;    // list all that user space as free
     initial_block->next = NULL; // next block is null
 
@@ -26,31 +26,7 @@ int destroy_heap() {
     return 0;
 }
 
-size_t align_size(size_t size) {
-    // size + BLOCK_SIZE - 1 ensures size is a multiple if it wasnt already
-    // bitwise AND clears lower bit that represents remainder, rounding up to a multiple
-    return (size + BLOCK_SIZE - 1) & ~(BLOCK_SIZE - 1);
-}
-
-void *my_memset(void *ptr, int value, size_t num) {
-    unsigned char *p = ptr;
-    while (num--) {
-        *p = (unsigned char) value;
-        p++;
-    }
-    return ptr;
-}
-
-void *my_memcpy(void *dest, const void *src, size_t n) {
-    // Cast to char * for byte-wise copying
-    char *d = (char *)dest;
-    const char *s = (const char *)src;
-    for (size_t i = 0; i < n; i++) {
-        d[i] = s[i];
-    }
-}
-
-void *my_malloc(size_t size) {
+void *malloc(size_t size) {
     struct block_metadata *block = heap;
     struct block_metadata *last = NULL;
 
@@ -58,7 +34,7 @@ void *my_malloc(size_t size) {
         return NULL;
     }
 
-    size = align_size(size);    // Align size
+    size = fn_align_size(size);    // Align size
 
     // terminates upon finding suitable block or end of memory block list
     while (block && !(block->free && block->size >= size)) {
@@ -72,15 +48,15 @@ void *my_malloc(size_t size) {
     }
 
     // Coalescing, if curr block is larger than size + metadata split block
-    if (block->size > size + BLOCK_SIZE ) {
+    if (block->size > size + METADATA_SIZE ) {
         /**
          * BASICALLY we found a curr block that is for userspace
          * we split this current block via new block and giving it the size of our new user space
          * set its size to the space after allocation, mark it as free, and update its next
          * set curr blocks size, and point it to new block (new block being our new available user space)
          */
-        struct block_metadata *new_block = (struct block_metadata *)((char *)block + BLOCK_SIZE + size);
-        new_block->size = block->size - size - BLOCK_SIZE;  // size of leftover space
+        struct block_metadata *new_block = (struct block_metadata *)((char *)block + METADATA_SIZE + size);
+        new_block->size = block->size - size - METADATA_SIZE;  // size of leftover space
         new_block->free = 1;            // marking as free
         new_block->next = block->next;  // link to next
 
@@ -90,10 +66,10 @@ void *my_malloc(size_t size) {
 
     // Mark as no longer being free, and return
     block->free = 0;
-    return (char *)block + BLOCK_SIZE;  // return size of block + block_size to accomadate user size + metadata
+    return (char *)block + METADATA_SIZE;  // return size of block + block_size to accomadate user size + metadata
 }
 
-void *my_calloc(size_t nelem, size_t elsize) {
+void *calloc(size_t nelem, size_t elsize) {
     struct block_metadata *block = heap;
     struct block_metadata *last = NULL;
     size_t total_size = nelem * elsize;
@@ -102,7 +78,7 @@ void *my_calloc(size_t nelem, size_t elsize) {
         fprintf(stderr, "Error: Unable to allocate memory block of size %ld\n", total_size);
         return NULL;
     }
-    total_size = align_size(total_size);
+    total_size = fn_align_size(total_size);
 
     // terminates upon finding suitable block or end of memory block list
     while (block && !(block->free && block->size >= total_size)) {
@@ -116,15 +92,15 @@ void *my_calloc(size_t nelem, size_t elsize) {
     }
 
     // Coalescing, if curr block is larger than size + metadata split block
-    if (block->size > total_size + BLOCK_SIZE ) {
+    if (block->size > total_size + METADATA_SIZE ) {
         /**
          * BASICALLY we found a curr block that is for userspace
          * we split this current block via new block and giving it the size of our new user space
          * set its size to the space after allocation, mark it as free, and update its next
          * set curr blocks size, and point it to new block (new block being our new available user space)
          */
-        struct block_metadata *new_block = (struct block_metadata *)((char *)block + BLOCK_SIZE + total_size);
-        new_block->size = block->size - total_size - BLOCK_SIZE;  // size of leftover space
+        struct block_metadata *new_block = (struct block_metadata *)((char *)block + METADATA_SIZE + total_size);
+        new_block->size = block->size - total_size - METADATA_SIZE;  // size of leftover space
         new_block->free = 1;            // marking as free
         new_block->next = block->next;  // link to next
 
@@ -133,23 +109,23 @@ void *my_calloc(size_t nelem, size_t elsize) {
     }
 
     // Mark as no longer being free, and return
-    my_memset((char *)block + BLOCK_SIZE, 0, total_size);
+    fn_memset((char *)block + METADATA_SIZE, 0, total_size);
     block->free = 0;
-    return (char *)block + BLOCK_SIZE;  // return size of block + block_size to accomadate user size + metadata
+    return (char *)block + METADATA_SIZE;  // return size of block + block_size to accomadate user size + metadata
 }
 
-void *my_realloc(void *ptr, size_t size) {
+void *realloc(void *ptr, size_t size) {
     if (size == 0) {
-        my_free(ptr);
+        free(ptr);
         return NULL;
     }
 
     if (!ptr) {
-        return my_malloc(size);  // If ptr is NULL, behave like malloc
+        return malloc(size);  // If ptr is NULL, behave like malloc
     }
 
-    size = align_size(size); 
-    struct block_metadata *block = (struct block_metadata *)((char *)ptr - BLOCK_SIZE);
+    size = fn_align_size(size); 
+    struct block_metadata *block = (struct block_metadata *)((char *)ptr - METADATA_SIZE);
     
     // If the current block size is equal or larger to new size
     if (block->size >= size) {
@@ -157,7 +133,7 @@ void *my_realloc(void *ptr, size_t size) {
     }
 
     // Allocate a new block
-    void *new_ptr = my_malloc(size);
+    void *new_ptr = malloc(size);
     if (!new_ptr) {
         return NULL;
     }
@@ -169,23 +145,23 @@ void *my_realloc(void *ptr, size_t size) {
     else
         copy_size = size;
 
-    my_memcpy(new_ptr, ptr, copy_size);
-    my_free(ptr);  // Free the old block
+    fn_memcpy(new_ptr, ptr, copy_size);
+    free(ptr);  // Free the old block
 
     return new_ptr;
 }
 
-void my_free(void *ptr) {
+void free(void *ptr) {
     if (!ptr) {
         return;
     }
 
-    struct block_metadata *block = (struct block_metadata *)((char *)ptr - BLOCK_SIZE);
+    struct block_metadata *block = (struct block_metadata *)((char *)ptr - METADATA_SIZE);
     block->free = 1;
 
     // Coalescing
     if (block->next && block->next->free) { // check if next block isnt null, and is also free
-        block->size += block->next->size + BLOCK_SIZE;   // sum their sizes + metadata size
+        block->size += block->next->size + METADATA_SIZE;   // sum their sizes + metadata size
         block->next = block->next->next;
     }
 
