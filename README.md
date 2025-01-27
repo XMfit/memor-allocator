@@ -8,3 +8,5 @@ Implemented memory management utilities to mirror 'memset' and 'memcopy' from `s
 ### Build
 `make all`
 
+gcc -o exe code.c -Iinclude -L -lmemlib
+
